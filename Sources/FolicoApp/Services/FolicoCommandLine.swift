@@ -7,6 +7,8 @@ public enum FolicoCommandLine {
 
         do {
             switch command {
+            case "agent":
+                return try agent(arguments: rest)
             case "scan":
                 return try scan(arguments: rest)
             case "apply":
@@ -132,6 +134,12 @@ public enum FolicoCommandLine {
         Usage:
           folico                         Open the macOS app
           folico <folder>                Scan child folders and preview icon suggestions
+          folico agent scan --path <folder>
+          folico agent plan --path <folder> [--json]
+          folico agent apply --path <folder> [--items 1,3] --confirm
+          folico agent restore [--folders path1,path2] --confirm
+          folico agent names --path <folder>
+          folico agent review-names --names path=name,path=name
           folico scan <folder> [--json]  Scan child folders and preview icon suggestions
           folico apply <folder> [--items 1,3] [--folders path1,path2] [--icons path=iconId] [--json]
           folico restore [--folders path1,path2] [--json]
@@ -150,6 +158,99 @@ public enum FolicoCommandLine {
 
     private static func expandPath(_ value: String) -> String {
         NSString(string: value).expandingTildeInPath
+    }
+}
+
+private extension FolicoCommandLine {
+    static func agent(arguments: [String]) throws -> Int {
+        let action = arguments.first ?? "help"
+        let options = try CLIOptions(arguments: Array(arguments.dropFirst()))
+        let workflow = FolicoWorkflow()
+
+        switch action {
+        case "scan":
+            let path = try options.requiredPathOption()
+            print(try JSONPrinter.encode(workflow.scan(path: path, includeHiddenFolders: options.hasFlag("--include-hidden"))))
+            return 0
+        case "plan":
+            let path = try options.requiredPathOption()
+            let selected = try selectedFolders(from: options, workflow: workflow, path: path)
+            let overrides = expandedMappings(options.mappingValue("--icons"))
+            print(try JSONPrinter.encode(workflow.planApply(path: path, selectedFolderPaths: selected, iconOverrides: overrides)))
+            return 0
+        case "apply":
+            guard options.hasFlag("--confirm") else {
+                throw CLIError.confirmationRequired("Use folico agent plan first, then pass --confirm to apply selected icons.")
+            }
+            let path = try options.requiredPathOption()
+            let selected = try selectedFolders(from: options, workflow: workflow, path: path)
+            let overrides = expandedMappings(options.mappingValue("--icons"))
+            let plan = try workflow.planApply(path: path, selectedFolderPaths: selected, iconOverrides: overrides)
+            let report = try workflow.apply(plan: plan)
+            print(try JSONPrinter.encode(report))
+            return report.results.contains(where: { $0.status == "failed" }) ? 2 : 0
+        case "restore-plan":
+            let selected = options.csvValue("--folders").map { Set($0.map { expandPath($0) }) }
+            print(try JSONPrinter.encode(workflow.planRestore(folderPaths: selected)))
+            return 0
+        case "restore":
+            guard options.hasFlag("--confirm") else {
+                throw CLIError.confirmationRequired("Use folico agent restore-plan first, then pass --confirm to restore icons.")
+            }
+            let selected = options.csvValue("--folders").map { Set($0.map { expandPath($0) }) }
+            let report = try workflow.restore(folderPaths: selected)
+            print(try JSONPrinter.encode(report))
+            return report.results.contains(where: { $0.status == "failed" }) ? 2 : 0
+        case "names":
+            let path = try options.requiredPathOption()
+            print(try JSONPrinter.encode(workflow.namingAdvice(path: path)))
+            return 0
+        case "review-names":
+            let proposedNames = expandedMappings(options.mappingValue("--names"))
+            print(try JSONPrinter.encode(workflow.reviewNamePlan(proposedNames: proposedNames)))
+            return 0
+        case "help", "--help", "-h":
+            printAgentHelp()
+            return 0
+        default:
+            fputs("Unknown agent action: \(action)\n\n", stderr)
+            printAgentHelp()
+            return 64
+        }
+    }
+
+    static func selectedFolders(from options: CLIOptions, workflow: FolicoWorkflow, path: String) throws -> Set<String>? {
+        if let items = options.indexValue("--items") {
+            let scanReport = try workflow.scan(path: path, includeHiddenFolders: options.hasFlag("--include-hidden"))
+            return Set(items.compactMap { index in
+                guard scanReport.suggestions.indices.contains(index - 1) else { return nil }
+                return scanReport.suggestions[index - 1].folderPath
+            })
+        }
+        return options.csvValue("--folders").map { Set($0.map { expandPath($0) }) }
+    }
+
+    static func expandedMappings(_ mappings: [String: String]) -> [String: String] {
+        mappings.reduce(into: [String: String]()) { output, pair in
+            output[expandPath(pair.key)] = pair.value
+        }
+    }
+
+    static func printAgentHelp() {
+        print("""
+        Folico agent CLI
+
+        All agent commands print JSON.
+
+        Usage:
+          folico agent plan --path <folder> [--items 1,3] [--folders path1,path2] [--icons path=iconId]
+          folico agent scan --path <folder>
+          folico agent apply --path <folder> [--items 1,3] [--folders path1,path2] [--icons path=iconId] --confirm
+          folico agent restore-plan [--folders path1,path2]
+          folico agent restore [--folders path1,path2] --confirm
+          folico agent names --path <folder>
+          folico agent review-names --names path=name,path=name
+        """)
     }
 }
 
@@ -196,6 +297,13 @@ struct CLIOptions {
         return NSString(string: path).expandingTildeInPath
     }
 
+    func requiredPathOption() throws -> String {
+        guard let path = values["--path"] ?? positional.first else {
+            throw CLIError.missingPath
+        }
+        return NSString(string: path).expandingTildeInPath
+    }
+
     func csvValue(_ key: String) -> [String]? {
         values[key]?
             .split(separator: ",")
@@ -221,11 +329,14 @@ struct CLIOptions {
 
 enum CLIError: LocalizedError {
     case missingPath
+    case confirmationRequired(String)
 
     var errorDescription: String? {
         switch self {
         case .missingPath:
             return "Missing folder path."
+        case .confirmationRequired(let message):
+            return message
         }
     }
 }

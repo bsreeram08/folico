@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: CLI guide
+    url: https://github.com/bsreeram08/folico/blob/master/docs/CLI.md
+    about: Learn how scripts and AI agents can use Folico through the CLI.
   - name: MCP guide
     url: https://github.com/bsreeram08/folico/blob/master/docs/MCP.md
     about: Learn how AI agents can use Folico through MCP.

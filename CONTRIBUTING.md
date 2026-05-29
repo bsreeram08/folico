@@ -33,6 +33,7 @@ open dist/Folico.dmg
 ```sh
 swift test
 swift run Folico ~/Documents
+swift run Folico agent plan --path ~/Documents
 swift run Folico scan ~/Documents --json
 swift run Folico mcp
 ```

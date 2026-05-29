@@ -62,34 +62,63 @@ struct FolicoWorkflow {
     }
 
     func apply(path: String, selectedFolderPaths: Set<String>?, iconOverrides: [String: String] = [:]) throws -> FolicoApplyReport {
+        try apply(plan: planApply(path: path, selectedFolderPaths: selectedFolderPaths, iconOverrides: iconOverrides))
+    }
+
+    func planApply(path: String, selectedFolderPaths: Set<String>?, iconOverrides: [String: String] = [:]) throws -> FolicoApplyPlan {
         let report = try scan(path: path)
+        let plannedChanges = report.suggestions.compactMap { suggestion -> FolicoPlannedIconChange? in
+            guard selectedFolderPaths == nil || selectedFolderPaths?.contains(suggestion.folderPath) == true else {
+                return nil
+            }
+            let iconId = iconOverrides[suggestion.folderPath] ?? suggestion.iconId
+            return FolicoPlannedIconChange(
+                folderPath: suggestion.folderPath,
+                folderName: suggestion.folderName,
+                iconId: iconId,
+                iconLabel: BuiltInIcons.descriptor(for: iconId).label,
+                ruleId: suggestion.ruleId,
+                ruleLabel: suggestion.ruleLabel,
+                confidence: suggestion.confidence
+            )
+        }
+
+        return FolicoApplyPlan(
+            rootPath: report.rootPath,
+            generatedAt: Date(),
+            plannedChanges: plannedChanges,
+            requiresConfirmation: true,
+            applyCommand: "folico agent apply --path \(shellQuote(report.rootPath)) --confirm"
+        )
+    }
+
+    func apply(plan: FolicoApplyPlan) throws -> FolicoApplyReport {
         var config = normalizedConfig(storage.load())
         var results: [FolicoApplyResult] = []
 
-        for suggestion in report.suggestions where selectedFolderPaths == nil || selectedFolderPaths?.contains(suggestion.folderPath) == true {
-            let iconId = iconOverrides[suggestion.folderPath] ?? suggestion.iconId
+        for change in plan.plannedChanges {
             do {
-                try iconService.applyIcon(iconId: iconId, toFolderAt: suggestion.folderPath)
+                try iconService.applyIcon(iconId: change.iconId, toFolderAt: change.folderPath)
                 let record = IconChangeRecord(
-                    folderPath: suggestion.folderPath,
+                    folderPath: change.folderPath,
                     bookmarkData: nil,
                     previousIconState: .unknown,
-                    appliedIconId: iconId,
+                    appliedIconId: change.iconId,
                     appliedAt: Date(),
-                    ruleId: suggestion.ruleId,
+                    ruleId: change.ruleId,
                     status: .applied,
                     errorMessage: nil
                 )
                 config.history.removeAll { $0.folderPath == record.folderPath }
                 config.history.insert(record, at: 0)
-                results.append(FolicoApplyResult(folderPath: suggestion.folderPath, iconId: iconId, status: "applied", errorMessage: nil))
+                results.append(FolicoApplyResult(folderPath: change.folderPath, iconId: change.iconId, status: "applied", errorMessage: nil))
             } catch {
-                results.append(FolicoApplyResult(folderPath: suggestion.folderPath, iconId: iconId, status: "failed", errorMessage: error.localizedDescription))
+                results.append(FolicoApplyResult(folderPath: change.folderPath, iconId: change.iconId, status: "failed", errorMessage: error.localizedDescription))
             }
         }
 
         try storage.save(config)
-        return FolicoApplyReport(rootPath: report.rootPath, appliedAt: Date(), results: results)
+        return FolicoApplyReport(rootPath: plan.rootPath, appliedAt: Date(), results: results)
     }
 
     func restore(folderPaths: Set<String>? = nil) throws -> FolicoRestoreReport {
@@ -118,6 +147,27 @@ struct FolicoWorkflow {
 
         try storage.save(config)
         return FolicoRestoreReport(restoredAt: Date(), results: results)
+    }
+
+    func planRestore(folderPaths: Set<String>? = nil) -> FolicoRestorePlan {
+        let config = normalizedConfig(storage.load())
+        let records = config.history.filter { record in
+            folderPaths == nil || folderPaths?.contains(record.folderPath) == true
+        }
+
+        return FolicoRestorePlan(
+            generatedAt: Date(),
+            plannedRestores: records.map {
+                FolicoPlannedRestore(
+                    folderPath: $0.folderPath,
+                    folderName: $0.folderName,
+                    appliedIconId: $0.appliedIconId,
+                    status: $0.status.rawValue
+                )
+            },
+            requiresConfirmation: true,
+            restoreCommand: "folico agent restore --confirm"
+        )
     }
 
     func namingAdvice(path: String) throws -> FolicoNamingReport {
@@ -173,6 +223,10 @@ struct FolicoWorkflow {
     }
 }
 
+private func shellQuote(_ value: String) -> String {
+    "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+}
+
 struct FolicoScanReport: Codable {
     var rootPath: String
     var scannedAt: Date
@@ -198,6 +252,24 @@ struct FolicoApplyReport: Codable {
     var results: [FolicoApplyResult]
 }
 
+struct FolicoApplyPlan: Codable {
+    var rootPath: String
+    var generatedAt: Date
+    var plannedChanges: [FolicoPlannedIconChange]
+    var requiresConfirmation: Bool
+    var applyCommand: String
+}
+
+struct FolicoPlannedIconChange: Codable {
+    var folderPath: String
+    var folderName: String
+    var iconId: String
+    var iconLabel: String
+    var ruleId: String
+    var ruleLabel: String
+    var confidence: Double
+}
+
 struct FolicoApplyResult: Codable {
     var folderPath: String
     var iconId: String
@@ -208,6 +280,20 @@ struct FolicoApplyResult: Codable {
 struct FolicoRestoreReport: Codable {
     var restoredAt: Date
     var results: [FolicoRestoreResult]
+}
+
+struct FolicoRestorePlan: Codable {
+    var generatedAt: Date
+    var plannedRestores: [FolicoPlannedRestore]
+    var requiresConfirmation: Bool
+    var restoreCommand: String
+}
+
+struct FolicoPlannedRestore: Codable {
+    var folderPath: String
+    var folderName: String
+    var appliedIconId: String
+    var status: String
 }
 
 struct FolicoRestoreResult: Codable {

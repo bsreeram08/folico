@@ -15,6 +15,12 @@ final class CommandLineOptionTests: XCTestCase {
         XCTAssertEqual(options.mappingValue("--icons")["/tmp/Photos"], "image")
     }
 
+    func testParsesPathOption() throws {
+        let options = try CLIOptions(arguments: ["--path", "~/Documents"])
+
+        XCTAssertTrue(try options.requiredPathOption().hasSuffix("/Documents"))
+    }
+
     func testNamingAdvisorNormalizesSeparators() {
         XCTAssertEqual(NamingAdvisor.suggestName(for: "client_invoices", ruleLabel: "Finance"), "Client Invoices")
         XCTAssertEqual(NamingAdvisor.suggestName(for: "Design", ruleLabel: "Design"), "Design")

@@ -43,12 +43,29 @@ Folico can also run directly against a folder:
 ```sh
 swift run Folico scan ~/Documents
 swift run Folico scan ~/Documents --json
+swift run Folico agent scan --path ~/Documents
+swift run Folico agent plan --path ~/Documents
+swift run Folico agent apply --path ~/Documents --items 1,3 --confirm
 swift run Folico apply ~/Documents --folders ~/Documents/Invoices,~/Documents/Photos
 swift run Folico restore --folders ~/Documents/Invoices
 swift run Folico names ~/Documents
 ```
 
 `scan` and `names` are read-only. `apply` changes Finder folder icons, and `restore` clears custom folder icons from Folico history.
+
+For AI agents and scripts, prefer the JSON-first agent commands:
+
+```sh
+folico agent plan --path ~/Documents
+folico agent scan --path ~/Documents
+folico agent apply --path ~/Documents --items 1,3 --confirm
+folico agent restore-plan --folders ~/Documents/Invoices
+folico agent restore --folders ~/Documents/Invoices --confirm
+folico agent names --path ~/Documents
+folico agent review-names --names ~/Documents/client_invoices="Client Invoices"
+```
+
+See [docs/CLI.md](docs/CLI.md) for the stable agent CLI contract.
 
 ## MCP
 

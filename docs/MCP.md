@@ -2,6 +2,8 @@
 
 Folico includes a stdio MCP server so AI agents can inspect folders, suggest icons, and validate folder naming plans.
 
+For most agents, prefer the simpler CLI contract in [CLI.md](CLI.md). MCP is useful when the host app specifically supports MCP tools.
+
 Start the server:
 
 ```sh
