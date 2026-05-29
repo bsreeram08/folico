@@ -66,6 +66,8 @@ Available tools:
 - `folico_suggest_folder_names`: suggest clearer folder names without renaming anything.
 - `folico_review_folder_name_plan`: let an agent submit proposed folder names for validation; Folico does not rename folders.
 
+See [docs/MCP.md](docs/MCP.md) for tool inputs, agent safety rules, and example payloads.
+
 ## Privacy
 
 Folico only scans folder names inside folders you select. It does not upload your files or read file contents.

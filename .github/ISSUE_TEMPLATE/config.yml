@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: MCP guide
+    url: https://github.com/bsreeram08/folico/blob/master/docs/MCP.md
+    about: Learn how AI agents can use Folico through MCP.
