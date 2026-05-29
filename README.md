@@ -2,6 +2,25 @@
 
 Folico is a native macOS SwiftUI utility that applies custom folder icons based on folder names.
 
+## Automatic Generation + AI
+
+Folico works in two layers:
+
+- **Automatic generation:** Folico scans folder names and generates icon suggestions with built-in local rules. No AI or internet is required.
+- **AI-assisted workflow:** Any AI agent can call Folico's CLI, read the JSON plan, explain the suggestions, ask for approval, and apply only the approved icons.
+
+That means Folico works by itself, and it also works well with AI agents.
+
+```sh
+folico agent plan --path ~/Documents
+```
+
+The command above auto-generates a JSON plan. An AI agent can then summarize it and run:
+
+```sh
+folico agent apply --path ~/Documents --items 1,3 --confirm
+```
+
 ## AI Agent Flow
 
 Folico is designed so you can ask an AI agent to organize Finder icons for you.
