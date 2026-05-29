@@ -26,7 +26,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$EXECUTABLE" "$MACOS_DIR/$APP_NAME"
 chmod +x "$MACOS_DIR/$APP_NAME"
-swift scripts/generate-app-icon.swift "$RESOURCES_DIR/$APP_NAME.icns"
+swift scripts/generate-app-icon.swift "Assets/AppIcon/FolicoAppIcon.png" "$RESOURCES_DIR/$APP_NAME.icns"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
