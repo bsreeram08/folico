@@ -198,4 +198,6 @@ open dist/Folico.dmg
 
 The generated app bundle uses bundle identifier `folico.sreerams.in`.
 
+The packaging script also generates `Folico.icns` and sets it as the app icon in the bundle.
+
 GitHub Actions also builds `Folico.dmg` on every push to `master`. Run the **Build DMG** workflow manually with `publish_release=true` to upload the latest DMG to the `latest` GitHub release.
