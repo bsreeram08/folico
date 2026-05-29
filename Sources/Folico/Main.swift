@@ -1,22 +1,14 @@
+import Foundation
 import FolicoApp
-import SwiftUI
+import Darwin
 
 @main
-struct Folico: App {
-    @StateObject private var appState = AppState()
-
-    var body: some Scene {
-        WindowGroup {
-            RootView()
-                .environmentObject(appState)
-                .frame(minWidth: 980, minHeight: 680)
-        }
-        .windowStyle(.titleBar)
-
-        Settings {
-            SettingsView()
-                .environmentObject(appState)
-                .frame(width: 560)
+struct Folico {
+    static func main() {
+        if CommandLine.arguments.count > 1 {
+            Darwin.exit(Int32(FolicoCommandLine.run(arguments: Array(CommandLine.arguments.dropFirst()))))
+        } else {
+            FolicoDesktopApp.main()
         }
     }
 }

@@ -43,6 +43,18 @@ public struct SettingsView: View {
                 FlowLayout(items: appState.config.exclusions.filter(\.isEnabled).map(\.pattern))
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Build from Source")
+                    .font(.headline)
+                Text("Repository: \(BuildInfo.repository)")
+                    .foregroundStyle(.secondary)
+                Text("Bundle ID: \(BuildInfo.bundleIdentifier)")
+                    .foregroundStyle(.secondary)
+                Text("Commands: \(BuildInfo.sourceCommands)")
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
             Divider()
 
             HStack {

@@ -1,0 +1,51 @@
+name: Build DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publish/update the latest GitHub release"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build-dmg:
+    name: Build Folico DMG
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build and package DMG
+        run: bash scripts/package-dmg.sh
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Folico-dmg
+          path: |
+            dist/Folico.dmg
+            dist/Folico.dmg.sha256
+
+      - name: Publish latest release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest >/dev/null 2>&1 || \
+            gh release create latest --title "Folico latest" --notes "Unsigned development build from master." --prerelease
+          gh release upload latest dist/Folico.dmg dist/Folico.dmg.sha256 --clobber
