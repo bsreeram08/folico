@@ -43,18 +43,21 @@ struct HistoryView: View {
                     .width(min: 150, ideal: 180)
 
                     TableColumn("Status") { record in
-                        Text(record.status.rawValue.capitalized)
-                            .foregroundStyle(record.status == .failed ? .red : .secondary)
+                        let status = displayStatus(for: record)
+                        Text(status.rawValue.capitalized)
+                            .foregroundStyle(statusColor(for: status))
                     }
                     .width(100)
 
                     TableColumn("Actions") { record in
+                        let isMissing = displayStatus(for: record) == .missing
                         HStack {
                             Button {
                                 appState.openInFinder(record.folderPath)
                             } label: {
                                 Image(systemName: "arrow.up.forward.app")
                             }
+                            .disabled(isMissing)
                             .help("Open in Finder")
 
                             Button {
@@ -62,7 +65,7 @@ struct HistoryView: View {
                             } label: {
                                 Image(systemName: "arrow.uturn.backward.circle")
                             }
-                            .disabled(appState.isRestoring || record.status == .restored)
+                            .disabled(appState.isRestoring || record.status == .restored || isMissing)
                             .help("Restore default folder icon")
                         }
                         .buttonStyle(.borderless)
@@ -71,7 +74,15 @@ struct HistoryView: View {
                 }
 
                 HStack {
+                    Button {
+                        appState.clearMissingHistoryRecords()
+                    } label: {
+                        Label("Clear Missing", systemImage: "trash")
+                    }
+                    .disabled(!hasMissingRecords)
+
                     Spacer()
+
                     Button(role: .destructive) {
                         appState.restoreAll()
                     } label: {
@@ -82,5 +93,24 @@ struct HistoryView: View {
             }
         }
         .padding(28)
+    }
+
+    private var hasMissingRecords: Bool {
+        appState.config.history.contains { displayStatus(for: $0) == .missing }
+    }
+
+    private func displayStatus(for record: IconChangeRecord) -> IconChangeStatus {
+        appState.folderExists(at: record.folderPath) ? record.status : .missing
+    }
+
+    private func statusColor(for status: IconChangeStatus) -> Color {
+        switch status {
+        case .failed:
+            .red
+        case .missing:
+            .orange
+        default:
+            .secondary
+        }
     }
 }

@@ -14,15 +14,27 @@ struct PreviewView: View {
                 EmptyStateView(
                     systemImage: "eye",
                     title: "No suggestions yet",
-                    message: "Scan watched folders to preview matching folder icons."
+                    message: appState.config.watchedFolders.isEmpty
+                        ? "Add a watched folder before scanning for matching folder icons."
+                        : "Scan watched folders to preview matching folder icons."
                 ) {
-                    Button {
-                        appState.scanNow()
-                    } label: {
-                        Label("Scan Now", systemImage: "arrow.clockwise")
+                    if appState.config.watchedFolders.isEmpty {
+                        Button {
+                            appState.selectedSection = .folders
+                            appState.chooseWatchedFolder()
+                        } label: {
+                            Label("Add Folder", systemImage: "folder.badge.plus")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Button {
+                            appState.scanNow()
+                        } label: {
+                            Label(appState.isScanning ? "Scanning" : "Scan Now", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(appState.isScanning)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(appState.config.watchedFolders.isEmpty || appState.isScanning)
                 }
             } else {
                 Table(appState.previewItems) {

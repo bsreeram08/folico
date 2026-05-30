@@ -86,9 +86,15 @@ Flow:
 ## MVP Features
 
 - Choose one or more watched folders.
+- Live-watch selected folders for new files and folders.
+- Optional local notifications for new files and folders.
+- Optional automatic icon application for newly created folders.
 - Scan direct child folders only.
 - Preview matched icon suggestions before applying.
 - Deselect or manually override suggested icons.
+- Create local keyword/path rules and generated fallback rules.
+- Optionally learn local rules from manual icon choices.
+- Configure scan exclusions from the app, CLI, or MCP.
 - Apply icons with AppKit.
 - Restore default folder icons from history.
 - Store all app data locally in Application Support.
@@ -103,6 +109,9 @@ swift run Folico scan ~/Documents --json
 swift run Folico agent scan --path ~/Documents
 swift run Folico agent plan --path ~/Documents
 swift run Folico agent apply --path ~/Documents --items 1,3 --confirm
+swift run Folico agent configure-settings --auto-watch true --notify true
+swift run Folico agent upsert-rule --label Games --icon game --keywords game,games,gaming
+swift run Folico agent add-exclusion --pattern node_modules
 swift run Folico apply ~/Documents --folders ~/Documents/Invoices,~/Documents/Photos
 swift run Folico restore --folders ~/Documents/Invoices
 swift run Folico names ~/Documents
@@ -116,6 +125,10 @@ For AI agents and scripts, prefer the JSON-first agent commands:
 folico agent plan --path ~/Documents
 folico agent scan --path ~/Documents
 folico agent apply --path ~/Documents --items 1,3 --confirm
+folico agent configure-settings --auto-watch true --notify true --auto-apply-new-folder-icons true --learn true
+folico agent upsert-rule --label Games --icon game --keywords game,games,gaming --folder-color purple
+folico agent upsert-generated-rule --id generated-games --label "Generated Games" --icon game --keywords game,games,gaming
+folico agent exclusions
 folico agent restore-plan --folders ~/Documents/Invoices
 folico agent restore --folders ~/Documents/Invoices --confirm
 folico agent names --path ~/Documents
@@ -169,12 +182,17 @@ Available tools:
 - `folico_restore_icons`: restore icons from history; requires `confirmRestore: true`.
 - `folico_suggest_folder_names`: suggest clearer folder names without renaming anything.
 - `folico_review_folder_name_plan`: let an agent submit proposed folder names for validation; Folico does not rename folders.
+- `folico_get_settings` / `folico_update_settings`: read and update local toggles.
+- `folico_list_rules` / `folico_upsert_rule` / `folico_remove_rule`: manage explicit local icon rules.
+- `folico_list_exclusions` / `folico_upsert_exclusion` / `folico_set_exclusion_enabled` / `folico_remove_exclusion`: manage local scan exclusions.
+- `folico_list_watched_folders` / `folico_add_watched_folder`: manage watched folders.
+- `folico_upsert_generated_rule`: manage generated fallback icon rules.
 
 See [docs/MCP.md](docs/MCP.md) for tool inputs, agent safety rules, and example payloads.
 
 ## Privacy
 
-Folico only scans folder names inside folders you select. It does not upload your files or read file contents.
+Folico runs locally. It only scans folder names inside folders you select. It does not collect analytics, upload folder names, send file paths, inspect file contents, or use a remote service.
 
 ## Development
 

@@ -2,13 +2,20 @@ import AppKit
 import Foundation
 
 protocol FolderIconServicing {
+    func applyIcon(iconId: String, style: FolderIconStyle?, toFolderAt path: String) throws
     func applyIcon(iconId: String, toFolderAt path: String) throws
     func restoreIcon(forFolderAt path: String) throws
 }
 
-struct FolderIconService: FolderIconServicing {
+extension FolderIconServicing {
     func applyIcon(iconId: String, toFolderAt path: String) throws {
-        let image = try FolderIconRenderer().render(iconId: iconId)
+        try applyIcon(iconId: iconId, style: nil, toFolderAt: path)
+    }
+}
+
+struct FolderIconService: FolderIconServicing {
+    func applyIcon(iconId: String, style: FolderIconStyle?, toFolderAt path: String) throws {
+        let image = try FolderIconRenderer().render(iconId: iconId, style: style)
         guard NSWorkspace.shared.setIcon(image, forFile: path, options: []) else {
             throw FolderIconError.applyFailed(path)
         }
@@ -39,7 +46,7 @@ enum FolderIconError: LocalizedError, Equatable {
 }
 
 struct FolderIconRenderer {
-    func render(iconId: String, size: CGFloat = 512) throws -> NSImage {
+    func render(iconId: String, style: FolderIconStyle? = nil, size: CGFloat = 512) throws -> NSImage {
         let descriptor = BuiltInIcons.descriptor(for: iconId)
         guard let symbol = NSImage(systemSymbolName: descriptor.symbolName, accessibilityDescription: descriptor.label) else {
             throw FolderIconError.unknownIcon(iconId)
@@ -49,7 +56,7 @@ struct FolderIconRenderer {
         image.lockFocus()
         defer { image.unlockFocus() }
 
-        let folderColor = NSColor.controlAccentColor.withAlphaComponent(0.9)
+        let folderColor = color(for: style?.folderColorName, fallback: .controlAccentColor).withAlphaComponent(0.9)
         let shadowColor = NSColor.black.withAlphaComponent(0.16)
         let bodyRect = NSRect(x: size * 0.08, y: size * 0.12, width: size * 0.84, height: size * 0.66)
         let tabRect = NSRect(x: size * 0.13, y: size * 0.70, width: size * 0.31, height: size * 0.16)
@@ -60,15 +67,16 @@ struct FolderIconRenderer {
         roundedPath(rect: bodyRect, radius: size * 0.085).fill()
         NSGraphicsContext.current?.cgContext.setShadow(offset: .zero, blur: 0)
 
-        let badgeRect = NSRect(x: size * 0.27, y: size * 0.23, width: size * 0.46, height: size * 0.46)
+        let badgeRect = NSRect(x: size * 0.25, y: size * 0.22, width: size * 0.50, height: size * 0.50)
         NSColor.white.withAlphaComponent(0.88).setFill()
         roundedPath(rect: badgeRect, radius: size * 0.12).fill()
 
-        let symbolConfig = NSImage.SymbolConfiguration(pointSize: size * 0.24, weight: .semibold)
+        let symbolConfig = NSImage.SymbolConfiguration(pointSize: size * 0.28, weight: .semibold)
         let configuredSymbol = symbol.withSymbolConfiguration(symbolConfig) ?? symbol
-        let symbolRect = NSRect(x: size * 0.35, y: size * 0.32, width: size * 0.30, height: size * 0.30)
-        tintColor(for: descriptor.tintName).set()
-        configuredSymbol.draw(in: symbolRect, from: .zero, operation: .sourceAtop, fraction: 1)
+        let symbolRect = NSRect(x: size * 0.33, y: size * 0.31, width: size * 0.34, height: size * 0.34)
+        let symbolColor = color(for: style?.symbolColorName ?? descriptor.tintName, fallback: .controlAccentColor)
+        tintedImage(configuredSymbol, color: symbolColor, size: symbolRect.size)
+            .draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 1)
 
         image.isTemplate = false
         return image
@@ -78,20 +86,35 @@ struct FolderIconRenderer {
         NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
     }
 
-    private func tintColor(for name: String) -> NSColor {
+    private func color(for name: String?, fallback: NSColor) -> NSColor {
+        guard let name else { return fallback }
         switch name {
-        case "green": .systemGreen
-        case "blue": .systemBlue
-        case "pink": .systemPink
-        case "purple": .systemPurple
-        case "gray": .systemGray
-        case "red": .systemRed
-        case "indigo": .systemIndigo
-        case "cyan": .systemCyan
-        case "orange": .systemOrange
-        case "brown": .systemBrown
-        case "mint": .systemMint
-        default: .controlAccentColor
+        case "green": return .systemGreen
+        case "blue": return .systemBlue
+        case "pink": return .systemPink
+        case "purple": return .systemPurple
+        case "gray": return .systemGray
+        case "red": return .systemRed
+        case "indigo": return .systemIndigo
+        case "cyan": return .systemCyan
+        case "orange": return .systemOrange
+        case "brown": return .systemBrown
+        case "mint": return .systemMint
+        case "teal": return .systemTeal
+        default: return fallback
         }
+    }
+
+    private func tintedImage(_ image: NSImage, color: NSColor, size: NSSize) -> NSImage {
+        let output = NSImage(size: size)
+        output.lockFocus()
+        defer { output.unlockFocus() }
+
+        let rect = NSRect(origin: .zero, size: size)
+        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+        color.setFill()
+        rect.fill(using: .sourceAtop)
+        output.isTemplate = false
+        return output
     }
 }

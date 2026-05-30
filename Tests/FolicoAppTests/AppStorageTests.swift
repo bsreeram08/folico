@@ -71,4 +71,17 @@ final class AppStorageTests: XCTestCase {
 
         XCTAssertEqual(loaded.history.first?.status, .restored)
     }
+
+    @MainActor
+    func testAppStateSettingUpdatesPersist() throws {
+        let storage = AppStorage(fileURL: fileURL)
+        let appState = AppState(storage: storage)
+
+        appState.setAutoWatchFolders(true)
+        appState.setShowMenuBarIcon(true)
+
+        let loaded = storage.load()
+        XCTAssertTrue(loaded.settings.autoWatchFolders)
+        XCTAssertTrue(loaded.settings.showMenuBarIcon)
+    }
 }

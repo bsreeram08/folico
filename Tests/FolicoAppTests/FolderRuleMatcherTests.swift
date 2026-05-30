@@ -37,6 +37,15 @@ final class FolderRuleMatcherTests: XCTestCase {
         XCTAssertEqual(result?.iconId, "code")
     }
 
+    func testGamesBeatArchiveForOldGames() {
+        let folder = ScannedFolder(path: "/Users/test/Desktop/old_games", name: "old_games")
+
+        let result = matcher.match(folder: folder, overrides: [], exclusions: [])
+
+        XCTAssertEqual(result?.ruleId, "games")
+        XCTAssertEqual(result?.iconId, "game")
+    }
+
     func testManualOverrideTakesPrecedence() {
         let folder = ScannedFolder(path: "/Users/test/Documents/Invoices", name: "Invoices")
         let override = FolderOverride(folderPath: folder.path, iconId: "music", createdAt: Date())

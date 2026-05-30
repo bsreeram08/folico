@@ -88,6 +88,162 @@ Input:
 }
 ```
 
+### `folico_get_settings`
+
+Returns Folico's local settings. Folico does not collect analytics or upload folder data.
+
+Input:
+
+```json
+{}
+```
+
+### `folico_update_settings`
+
+Updates local toggles.
+
+Input:
+
+```json
+{
+  "autoWatchFolders": true,
+  "notifyOnNewItems": true,
+  "autoApplyNewFolderIcons": true,
+  "applyGeneratedIconsToUnmatchedFolders": false,
+  "showMenuBarIcon": true,
+  "learnFromManualChoices": true
+}
+```
+
+### `folico_list_rules`
+
+Returns explicit rules, generated fallback rules, available icons, and color names.
+
+Input:
+
+```json
+{}
+```
+
+### `folico_upsert_rule`
+
+Creates or updates an explicit local icon rule.
+
+Input:
+
+```json
+{
+  "label": "Games",
+  "keywords": ["game", "games", "gaming"],
+  "pathKeywords": ["steam"],
+  "iconId": "game",
+  "priority": 120,
+  "folderColorName": "purple",
+  "symbolColorName": "purple"
+}
+```
+
+### `folico_remove_rule`
+
+Removes a user-created icon rule.
+
+Input:
+
+```json
+{
+  "id": "user-games"
+}
+```
+
+### `folico_list_exclusions`
+
+Returns local exclusion patterns.
+
+Input:
+
+```json
+{}
+```
+
+### `folico_upsert_exclusion`
+
+Creates or re-enables a local exclusion pattern.
+
+Input:
+
+```json
+{
+  "pattern": "node_modules",
+  "isEnabled": true
+}
+```
+
+### `folico_set_exclusion_enabled`
+
+Enables or disables an exclusion pattern.
+
+Input:
+
+```json
+{
+  "pattern": "node_modules",
+  "isEnabled": false
+}
+```
+
+### `folico_remove_exclusion`
+
+Removes a custom exclusion pattern. Built-in defaults are disabled instead of deleted.
+
+Input:
+
+```json
+{
+  "pattern": ".dart_tool"
+}
+```
+
+### `folico_list_watched_folders`
+
+Returns locally watched folders.
+
+Input:
+
+```json
+{}
+```
+
+### `folico_add_watched_folder`
+
+Adds a local watched folder.
+
+Input:
+
+```json
+{
+  "path": "~/Documents"
+}
+```
+
+### `folico_upsert_generated_rule`
+
+Creates or updates a config-driven generated fallback rule.
+
+Input:
+
+```json
+{
+  "id": "generated-games",
+  "label": "Generated Games",
+  "keywords": ["game", "games", "gaming"],
+  "pathKeywords": ["steam"],
+  "iconId": "game",
+  "priority": 75,
+  "folderColorName": "purple",
+  "symbolColorName": "purple"
+}
+```
+
 ## Agent Safety Rules
 
 - Use `folico_scan_folder` before `folico_apply_icons`.
@@ -95,3 +251,5 @@ Input:
 - Never call `folico_restore_icons` without user approval.
 - Treat folder name suggestions as advice only; Folico does not rename folders.
 - Prefer `folderPaths` for selected changes instead of applying all suggestions.
+- Do not inspect file contents. Folico matching uses folder names and path components.
+- Keep generated fallback, auto-watch, notifications, and auto-apply behavior under user-controlled toggles.

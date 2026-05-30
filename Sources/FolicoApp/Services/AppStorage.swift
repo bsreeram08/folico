@@ -41,6 +41,10 @@ struct AppStorage {
     }
 
     static func defaultConfigURL(fileManager: FileManager = .default) -> URL {
+        if let path = ProcessInfo.processInfo.environment["FOLICO_CONFIG_PATH"], !path.isEmpty {
+            return URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
+        }
+
         let directory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         return directory.appending(path: "Folico").appending(path: "config.json")

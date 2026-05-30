@@ -29,12 +29,18 @@ struct FolicoWorkflow {
         switch result {
         case .success(let folders):
             let suggestions = folders.compactMap { folder -> FolicoSuggestion? in
-                guard let match = matcher.match(
+                let explicitMatch = matcher.match(
                     folder: folder,
                     rules: activeRules(config),
                     overrides: config.overrides,
                     exclusions: config.exclusions
-                ) else { return nil }
+                )
+                let match = explicitMatch ?? (
+                    config.settings.applyGeneratedIconsToUnmatchedFolders
+                        ? matcher.generatedMatch(folder: folder, generatedRules: generatedRules(config), exclusions: config.exclusions)
+                        : nil
+                )
+                guard let match else { return nil }
 
                 return FolicoSuggestion(
                     folderPath: folder.path,
@@ -45,7 +51,8 @@ struct FolicoWorkflow {
                     ruleLabel: match.ruleLabel,
                     confidence: match.confidence,
                     matchSource: match.source.rawValue,
-                    suggestedName: NamingAdvisor.suggestName(for: folder.name, ruleLabel: match.ruleLabel)
+                    suggestedName: NamingAdvisor.suggestName(for: folder.name, ruleLabel: match.ruleLabel),
+                    style: match.style
                 )
             }
             .sorted { $0.folderName.localizedCaseInsensitiveCompare($1.folderName) == .orderedAscending }
@@ -79,7 +86,8 @@ struct FolicoWorkflow {
                 iconLabel: BuiltInIcons.descriptor(for: iconId).label,
                 ruleId: suggestion.ruleId,
                 ruleLabel: suggestion.ruleLabel,
-                confidence: suggestion.confidence
+                confidence: suggestion.confidence,
+                style: suggestion.style
             )
         }
 
@@ -97,8 +105,25 @@ struct FolicoWorkflow {
         var results: [FolicoApplyResult] = []
 
         for change in plan.plannedChanges {
+            guard folderExists(at: change.folderPath) else {
+                let record = IconChangeRecord(
+                    folderPath: change.folderPath,
+                    bookmarkData: nil,
+                    previousIconState: .unknown,
+                    appliedIconId: change.iconId,
+                    appliedAt: Date(),
+                    ruleId: change.ruleId,
+                    status: .missing,
+                    errorMessage: nil
+                )
+                config.history.removeAll { $0.folderPath == record.folderPath }
+                config.history.insert(record, at: 0)
+                results.append(FolicoApplyResult(folderPath: change.folderPath, iconId: change.iconId, status: "missing", errorMessage: nil))
+                continue
+            }
+
             do {
-                try iconService.applyIcon(iconId: change.iconId, toFolderAt: change.folderPath)
+                try iconService.applyIcon(iconId: change.iconId, style: change.style, toFolderAt: change.folderPath)
                 let record = IconChangeRecord(
                     folderPath: change.folderPath,
                     bookmarkData: nil,
@@ -129,6 +154,15 @@ struct FolicoWorkflow {
         }
 
         for record in records {
+            guard folderExists(at: record.folderPath) else {
+                if let index = config.history.firstIndex(where: { $0.id == record.id }) {
+                    config.history[index].status = .missing
+                    config.history[index].errorMessage = nil
+                }
+                results.append(FolicoRestoreResult(folderPath: record.folderPath, status: "missing", errorMessage: nil))
+                continue
+            }
+
             do {
                 try iconService.restoreIcon(forFolderAt: record.folderPath)
                 if let index = config.history.firstIndex(where: { $0.id == record.id }) {
@@ -170,6 +204,151 @@ struct FolicoWorkflow {
         )
     }
 
+    func settingsReport() -> FolicoSettingsReport {
+        let config = normalizedConfig(storage.load())
+        return FolicoSettingsReport(
+            configPath: storage.fileURL.path,
+            settings: config.settings
+        )
+    }
+
+    func updateSettings(_ patch: FolicoSettingsPatch) throws -> FolicoSettingsReport {
+        var config = normalizedConfig(storage.load())
+        if let value = patch.autoWatchFolders {
+            config.settings.autoWatchFolders = value
+        }
+        if let value = patch.notifyOnNewItems {
+            config.settings.notifyOnNewItems = value
+        }
+        if let value = patch.autoApplyNewFolderIcons {
+            config.settings.autoApplyNewFolderIcons = value
+        }
+        if let value = patch.applyGeneratedIconsToUnmatchedFolders {
+            config.settings.applyGeneratedIconsToUnmatchedFolders = value
+        }
+        if let value = patch.showMenuBarIcon {
+            config.settings.showMenuBarIcon = value
+        }
+        if let value = patch.learnFromManualChoices {
+            config.settings.learnFromManualChoices = value
+        }
+        try storage.save(config)
+        return settingsReport()
+    }
+
+    func watchedFoldersReport() -> FolicoWatchedFoldersReport {
+        let config = normalizedConfig(storage.load())
+        return FolicoWatchedFoldersReport(
+            configPath: storage.fileURL.path,
+            watchedFolders: config.watchedFolders
+        )
+    }
+
+    func addWatchedFolder(path: String) throws -> FolicoWatchedFoldersReport {
+        var config = normalizedConfig(storage.load())
+        let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard !config.watchedFolders.contains(where: { URL(fileURLWithPath: $0.path).standardizedFileURL.path == standardizedPath }) else {
+            return watchedFoldersReport()
+        }
+        config.watchedFolders.append(WatchedFolder(path: standardizedPath, bookmarkData: nil, addedAt: Date()))
+        try storage.save(config)
+        return watchedFoldersReport()
+    }
+
+    func rulesReport() -> FolicoRulesReport {
+        let config = normalizedConfig(storage.load())
+        return FolicoRulesReport(
+            configPath: storage.fileURL.path,
+            iconRules: activeRules(config),
+            generatedRules: generatedRules(config),
+            availableIcons: BuiltInIcons.all,
+            availableColors: FolderIconStyle.availableColorNames
+        )
+    }
+
+    func exclusionsReport() -> FolicoExclusionsReport {
+        let config = normalizedConfig(storage.load())
+        return FolicoExclusionsReport(
+            configPath: storage.fileURL.path,
+            exclusions: config.exclusions,
+            defaultPatterns: FolderExclusion.defaultPatterns
+        )
+    }
+
+    func upsertExclusion(pattern: String, isEnabled: Bool = true) throws -> FolicoExclusionsReport {
+        var config = normalizedConfig(storage.load())
+        let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return exclusionsReport() }
+
+        if let index = config.exclusions.firstIndex(where: {
+            FolderExclusion.normalizedPattern($0.pattern) == FolderExclusion.normalizedPattern(trimmed)
+        }) {
+            config.exclusions[index].isEnabled = isEnabled
+        } else {
+            config.exclusions.append(FolderExclusion(pattern: trimmed, isEnabled: isEnabled))
+            config.exclusions.sort {
+                $0.pattern.localizedCaseInsensitiveCompare($1.pattern) == .orderedAscending
+            }
+        }
+
+        try storage.save(config)
+        return exclusionsReport()
+    }
+
+    func setExclusion(pattern: String, isEnabled: Bool) throws -> FolicoExclusionsReport {
+        var config = normalizedConfig(storage.load())
+        let normalized = FolderExclusion.normalizedPattern(pattern)
+        if let index = config.exclusions.firstIndex(where: { FolderExclusion.normalizedPattern($0.pattern) == normalized }) {
+            config.exclusions[index].isEnabled = isEnabled
+            try storage.save(config)
+        }
+        return exclusionsReport()
+    }
+
+    func removeExclusion(pattern: String) throws -> FolicoExclusionsReport {
+        var config = normalizedConfig(storage.load())
+        let normalized = FolderExclusion.normalizedPattern(pattern)
+        if FolderExclusion.isDefaultPattern(pattern),
+           let index = config.exclusions.firstIndex(where: { FolderExclusion.normalizedPattern($0.pattern) == normalized }) {
+            config.exclusions[index].isEnabled = false
+        } else {
+            config.exclusions.removeAll { FolderExclusion.normalizedPattern($0.pattern) == normalized }
+        }
+        try storage.save(config)
+        return exclusionsReport()
+    }
+
+    func upsertGeneratedRule(_ rule: FolderIconRule) throws -> FolicoRulesReport {
+        var config = normalizedConfig(storage.load())
+        var rules = generatedRules(config)
+        rules.removeAll { $0.id == rule.id }
+        rules.append(rule)
+        config.generatedRules = rules.sorted {
+            if $0.priority == $1.priority { return $0.label < $1.label }
+            return $0.priority > $1.priority
+        }
+        try storage.save(config)
+        return rulesReport()
+    }
+
+    func upsertIconRule(_ rule: FolderIconRule) throws -> FolicoRulesReport {
+        var config = normalizedConfig(storage.load())
+        config.rules.removeAll { $0.id == rule.id }
+        config.rules.append(rule)
+        config.rules = BuiltInRules.mergeDefaultRules(into: config.rules)
+        try storage.save(config)
+        return rulesReport()
+    }
+
+    func removeIconRule(id: String) throws -> FolicoRulesReport {
+        var config = normalizedConfig(storage.load())
+        if !BuiltInRules.isBuiltInRuleID(id) {
+            config.rules.removeAll { $0.id == id }
+            try storage.save(config)
+        }
+        return rulesReport()
+    }
+
     func namingAdvice(path: String) throws -> FolicoNamingReport {
         let report = try scan(path: path)
         return FolicoNamingReport(
@@ -207,12 +386,9 @@ struct FolicoWorkflow {
 
     private func normalizedConfig(_ config: AppConfig) -> AppConfig {
         var config = config
-        if config.rules.isEmpty {
-            config.rules = BuiltInRules.defaultRules
-        }
-        if config.exclusions.isEmpty {
-            config.exclusions = FolderExclusion.defaultExclusions
-        }
+        config.rules = BuiltInRules.mergeDefaultRules(into: config.rules)
+        config.exclusions = FolderExclusion.defaultsMerged(into: config.exclusions)
+        config.generatedRules = BuiltInRules.mergeGeneratedRules(into: config.generatedRules ?? [])
         return config
     }
 
@@ -220,6 +396,15 @@ struct FolicoWorkflow {
         config.rules.filter { rule in
             config.settings.enableDeveloperRules || rule.id != "code"
         }
+    }
+
+    private func generatedRules(_ config: AppConfig) -> [FolderIconRule] {
+        config.generatedRules ?? BuiltInRules.generatedRules
+    }
+
+    private func folderExists(at path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 }
 
@@ -244,6 +429,7 @@ struct FolicoSuggestion: Codable {
     var confidence: Double
     var matchSource: String
     var suggestedName: String
+    var style: FolderIconStyle?
 }
 
 struct FolicoApplyReport: Codable {
@@ -268,6 +454,7 @@ struct FolicoPlannedIconChange: Codable {
     var ruleId: String
     var ruleLabel: String
     var confidence: Double
+    var style: FolderIconStyle?
 }
 
 struct FolicoApplyResult: Codable {
@@ -326,6 +513,39 @@ struct FolicoNameProposalReview: Codable {
     var proposedName: String
     var status: String
     var issues: [String]
+}
+
+struct FolicoSettingsReport: Codable {
+    var configPath: String
+    var settings: AppSettings
+}
+
+struct FolicoSettingsPatch: Codable {
+    var autoWatchFolders: Bool?
+    var notifyOnNewItems: Bool?
+    var autoApplyNewFolderIcons: Bool?
+    var applyGeneratedIconsToUnmatchedFolders: Bool?
+    var showMenuBarIcon: Bool?
+    var learnFromManualChoices: Bool?
+}
+
+struct FolicoRulesReport: Codable {
+    var configPath: String
+    var iconRules: [FolderIconRule]
+    var generatedRules: [FolderIconRule]
+    var availableIcons: [IconDescriptor]
+    var availableColors: [String]
+}
+
+struct FolicoWatchedFoldersReport: Codable {
+    var configPath: String
+    var watchedFolders: [WatchedFolder]
+}
+
+struct FolicoExclusionsReport: Codable {
+    var configPath: String
+    var exclusions: [FolderExclusion]
+    var defaultPatterns: [String]
 }
 
 enum NamingAdvisor {

@@ -55,6 +55,15 @@ public enum FolicoCommandLine {
                     printNames(report)
                 }
                 return 0
+            case "settings":
+                print(try JSONPrinter.encode(FolicoWorkflow().settingsReport()))
+                return 0
+            case "rules":
+                print(try JSONPrinter.encode(FolicoWorkflow().rulesReport()))
+                return 0
+            case "exclusions":
+                print(try JSONPrinter.encode(FolicoWorkflow().exclusionsReport()))
+                return 0
             case "mcp":
                 try FolicoMCPServer().run()
                 return 0
@@ -144,6 +153,9 @@ public enum FolicoCommandLine {
           folico apply <folder> [--items 1,3] [--folders path1,path2] [--icons path=iconId] [--json]
           folico restore [--folders path1,path2] [--json]
           folico names <folder> [--json] Suggest safer folder naming
+          folico settings                Print local settings JSON
+          folico rules                   Print icon rule JSON
+          folico exclusions              Print exclusion rule JSON
           folico mcp                     Start the Folico MCP stdio server
 
         Notes:
@@ -209,6 +221,77 @@ private extension FolicoCommandLine {
             let proposedNames = expandedMappings(options.mappingValue("--names"))
             print(try JSONPrinter.encode(workflow.reviewNamePlan(proposedNames: proposedNames)))
             return 0
+        case "settings":
+            print(try JSONPrinter.encode(workflow.settingsReport()))
+            return 0
+        case "configure-settings":
+            print(try JSONPrinter.encode(workflow.updateSettings(FolicoSettingsPatch(
+                autoWatchFolders: options.boolValue("--auto-watch"),
+                notifyOnNewItems: options.boolValue("--notify"),
+                autoApplyNewFolderIcons: options.boolValue("--auto-apply-new-folder-icons"),
+                applyGeneratedIconsToUnmatchedFolders: options.boolValue("--generated-fallback"),
+                showMenuBarIcon: options.boolValue("--menu-bar"),
+                learnFromManualChoices: options.boolValue("--learn")
+            ))))
+            return 0
+        case "watched-folders":
+            print(try JSONPrinter.encode(workflow.watchedFoldersReport()))
+            return 0
+        case "watch-folder":
+            let path = try options.requiredPathOption()
+            print(try JSONPrinter.encode(workflow.addWatchedFolder(path: path)))
+            return 0
+        case "rules":
+            print(try JSONPrinter.encode(workflow.rulesReport()))
+            return 0
+        case "upsert-rule":
+            let label = try options.requiredValue("--label")
+            let rule = try FolderIconRule(
+                id: options.value("--id") ?? "user-\(slug(label))",
+                label: label,
+                keywords: options.csvValue("--keywords") ?? [],
+                pathKeywords: options.csvValue("--path-keywords"),
+                iconId: options.requiredValue("--icon"),
+                priority: options.intValue("--priority") ?? 120,
+                folderColorName: options.value("--folder-color"),
+                symbolColorName: options.value("--symbol-color") ?? options.value("--folder-color")
+            )
+            print(try JSONPrinter.encode(workflow.upsertIconRule(rule)))
+            return 0
+        case "remove-rule":
+            print(try JSONPrinter.encode(workflow.removeIconRule(id: options.requiredValue("--id"))))
+            return 0
+        case "exclusions":
+            print(try JSONPrinter.encode(workflow.exclusionsReport()))
+            return 0
+        case "add-exclusion":
+            print(try JSONPrinter.encode(workflow.upsertExclusion(
+                pattern: options.requiredValue("--pattern"),
+                isEnabled: options.boolValue("--enabled") ?? true
+            )))
+            return 0
+        case "set-exclusion":
+            print(try JSONPrinter.encode(workflow.setExclusion(
+                pattern: options.requiredValue("--pattern"),
+                isEnabled: options.boolValue("--enabled") ?? true
+            )))
+            return 0
+        case "remove-exclusion":
+            print(try JSONPrinter.encode(workflow.removeExclusion(pattern: options.requiredValue("--pattern"))))
+            return 0
+        case "upsert-generated-rule":
+            let rule = try FolderIconRule(
+                id: options.requiredValue("--id"),
+                label: options.requiredValue("--label"),
+                keywords: options.csvValue("--keywords") ?? [],
+                pathKeywords: options.csvValue("--path-keywords"),
+                iconId: options.requiredValue("--icon"),
+                priority: options.intValue("--priority") ?? 10,
+                folderColorName: options.value("--folder-color"),
+                symbolColorName: options.value("--symbol-color")
+            )
+            print(try JSONPrinter.encode(workflow.upsertGeneratedRule(rule)))
+            return 0
         case "help", "--help", "-h":
             printAgentHelp()
             return 0
@@ -250,7 +333,25 @@ private extension FolicoCommandLine {
           folico agent restore [--folders path1,path2] --confirm
           folico agent names --path <folder>
           folico agent review-names --names path=name,path=name
+          folico agent settings
+          folico agent configure-settings [--auto-watch true] [--notify true] [--auto-apply-new-folder-icons true] [--generated-fallback true] [--learn true]
+          folico agent watched-folders
+          folico agent watch-folder --path <folder>
+          folico agent rules
+          folico agent upsert-rule --label <label> --icon <iconId> --keywords a,b [--path-keywords a,b] [--folder-color blue]
+          folico agent remove-rule --id <id>
+          folico agent exclusions
+          folico agent add-exclusion --pattern <name> [--enabled true]
+          folico agent set-exclusion --pattern <name> --enabled false
+          folico agent remove-exclusion --pattern <name>
+          folico agent upsert-generated-rule --id <id> --label <label> --icon <iconId> [--keywords a,b] [--path-keywords a,b] [--folder-color blue]
         """)
+    }
+
+    static func slug(_ value: String) -> String {
+        let normalized = FolderRuleMatcher.normalize(value)
+        let slug = normalized.replacingOccurrences(of: " ", with: "-")
+        return slug.isEmpty ? UUID().uuidString.lowercased() : slug
     }
 }
 
@@ -290,6 +391,17 @@ struct CLIOptions {
         flags.contains(flag)
     }
 
+    func value(_ key: String) -> String? {
+        values[key]
+    }
+
+    func requiredValue(_ key: String) throws -> String {
+        guard let value = values[key], !value.isEmpty else {
+            throw CLIError.missingOption(key)
+        }
+        return value
+    }
+
     func requiredPath() throws -> String {
         guard let path = positional.first else {
             throw CLIError.missingPath
@@ -315,6 +427,19 @@ struct CLIOptions {
         csvValue(key)?.compactMap(Int.init)
     }
 
+    func intValue(_ key: String) -> Int? {
+        values[key].flatMap(Int.init)
+    }
+
+    func boolValue(_ key: String) -> Bool? {
+        guard let value = values[key]?.lowercased() else { return nil }
+        switch value {
+        case "true", "yes", "1", "on": return true
+        case "false", "no", "0", "off": return false
+        default: return nil
+        }
+    }
+
     func mappingValue(_ key: String) -> [String: String] {
         guard let raw = values[key] else { return [:] }
         return raw
@@ -329,12 +454,15 @@ struct CLIOptions {
 
 enum CLIError: LocalizedError {
     case missingPath
+    case missingOption(String)
     case confirmationRequired(String)
 
     var errorDescription: String? {
         switch self {
         case .missingPath:
             return "Missing folder path."
+        case .missingOption(let option):
+            return "Missing required option \(option)."
         case .confirmationRequired(let message):
             return message
         }

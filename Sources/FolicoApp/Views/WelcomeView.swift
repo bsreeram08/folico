@@ -49,7 +49,7 @@ struct WelcomeView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Privacy")
                         .font(.headline)
-                    Text("Folico only scans folder names inside folders you select. It does not upload your files or read file contents.")
+                    Text("Folico only watches folders you select. It does not collect analytics, upload folder names, send file paths, or read file contents.")
                         .foregroundStyle(.secondary)
                 }
                 .padding(14)
